@@ -1,20 +1,26 @@
-# Python cache files
+# Python
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-
-# Virtual environment
 .venv/
 venv/
-env/
+
+# Environment
+.env
+
+# Session file
+*.session
+
+# Database file
+*.db
+
+# Log files
+*.log
 
 # IDE files
 .idea/
 .vscode/
-
-# Environment variables
-.env
 
 # OS files
 .DS_Store
