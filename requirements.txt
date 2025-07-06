@@ -1,3 +1,4 @@
 telethon==1.40.0
 python-dotenv==1.1.1
 sqlalchemy==2.0.41
+openai~=1.93.0

@@ -4,7 +4,7 @@ import logging
 from dotenv import load_dotenv
 
 from database.database import create_db_and_tables
-from listeners.telegram_listener import TelegramListener, process_new_message
+from listeners.telegram_listener import TelegramListener
 
 
 # Configure logging for the entire application
@@ -31,6 +31,7 @@ async def main():
         API_HASH = os.getenv('TELEGRAM_API_HASH')
         SESSION_NAME = os.getenv('TELEGRAM_SESSION_NAME')
         chat_ids_str = os.getenv('TELEGRAM_TARGET_CHAT_IDS', '')
+        TELEGRAM_HISTORY_LIMIT = int(os.getenv('TELEGRAM_HISTORY_LIMIT', '5'))
 
         if not all([API_ID, API_HASH, SESSION_NAME]):
             raise ValueError("Missing required Telegram environment variables")
@@ -50,7 +51,7 @@ async def main():
         api_id=API_ID,
         api_hash=API_HASH,
         target_chat_ids=TARGET_CHAT_IDS,
-        message_processor_callback=process_new_message
+        history_limit=TELEGRAM_HISTORY_LIMIT
     )
 
     await telegram_listener.start()
