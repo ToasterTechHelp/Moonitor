@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Moonitor Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>🚀 Moonitor Dashboard</h1>
+            <p>Real-time Telegram memecoin signal monitoring</p>
+        </header>
+
+        <!-- Statistics Dashboard -->
+        <section class="stats-grid">
+            <div class="stat-card">
+                <h3>Total Messages</h3>
+                <div class="stat-value" id="total-messages">-</div>
+            </div>
+            <div class="stat-card buy">
+                <h3>Buy Signals</h3>
+                <div class="stat-value" id="buy-signals">-</div>
+            </div>
+            <div class="stat-card hold">
+                <h3>Hold Signals</h3>
+                <div class="stat-value" id="hold-signals">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>24h Activity</h3>
+                <div class="stat-value" id="recent-activity">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>Avg Confidence</h3>
+                <div class="stat-value" id="avg-confidence">-</div>
+            </div>
+        </section>
+
+        <!-- Recent High-Confidence Buy Signals -->
+        <section class="recent-signals">
+            <h2>🔥 Recent High-Confidence Buy Signals</h2>
+            <div id="recent-buy-signals" class="signals-list">
+                <!-- Populated by JavaScript -->
+            </div>
+        </section>
+
+        <!-- Filters -->
+        <section class="filters">
+            <h2>📊 Message Browser</h2>
+            <div class="filter-controls">
+                <select id="decision-filter">
+                    <option value="">All Decisions</option>
+                    <option value="buy">Buy Signals</option>
+                    <option value="hold">Hold Signals</option>
+                </select>
+                
+                <select id="channel-filter">
+                    <option value="">All Channels</option>
+                    <!-- Populated by JavaScript -->
+                </select>
+                
+                <input type="number" id="confidence-filter" placeholder="Min Confidence (0-1)" 
+                       step="0.1" min="0" max="1">
+                
+                <button id="apply-filters">Apply Filters</button>
+                <button id="clear-filters">Clear</button>
+            </div>
+        </section>
+
+        <!-- Messages Table -->
+        <section class="messages-section">
+            <div class="messages-header">
+                <h3>Messages</h3>
+                <div class="pagination-info">
+                    <span id="pagination-info">-</span>
+                </div>
+            </div>
+            
+            <div class="messages-container">
+                <table class="messages-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Channel</th>
+                            <th>Sender</th>
+                            <th>Message</th>
+                            <th>Decision</th>
+                            <th>Confidence</th>
+                            <th>Token</th>
+                        </tr>
+                    </thead>
+                    <tbody id="messages-tbody">
+                        <!-- Populated by JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="pagination">
+                <button id="prev-page" disabled>Previous</button>
+                <span id="page-info">Page 1</span>
+                <button id="next-page" disabled>Next</button>
+            </div>
+        </section>
+
+        <!-- Top Channels Chart -->
+        <section class="charts-section">
+            <h2>📈 Top Active Channels</h2>
+            <canvas id="channels-chart" width="400" height="200"></canvas>
+        </section>
+    </div>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
