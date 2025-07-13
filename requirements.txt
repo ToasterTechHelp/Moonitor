@@ -4,3 +4,4 @@ sqlalchemy==2.0.41
 openai~=1.93.0
 solders==0.26.0
 solana==0.36.6
+base58==2.1.1

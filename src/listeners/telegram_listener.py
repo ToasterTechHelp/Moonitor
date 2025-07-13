@@ -8,9 +8,8 @@ from datetime import datetime, timezone
 from telethon import TelegramClient, events
 from solders.keypair import Keypair
 from solana.rpc.async_api import AsyncClient
-from jupiter_python_sdk.jupiter import Jupiter
 
-from src.database.database import get_session, ProcessedMessage, Trade
+from src.database.database import get_db_session, ProcessedMessage, Trade  # Changed import
 from src.llm.openai_analyzer import analyze_with_openai
 from src.trading.strategy import calculate_trade_plan
 from src.trading.trader import execute_jupiter_swap, create_limit_order, get_amount_received
@@ -53,147 +52,83 @@ class TelegramListener:
             return
 
         channel_id = event.chat_id
-        db_session = get_session()
 
         try:
-            chat = await event.get_chat()
-            sender = await event.get_sender()
+            with get_db_session() as db_session:
+                chat = await event.get_chat()
+                sender = await event.get_sender()
 
-            sender_name = getattr(sender, 'username', None) or getattr(sender, 'first_name', 'N/A')
-            channel_name = getattr(chat, 'title', 'Unknown Channel')
+                sender_name = getattr(sender, 'username', None) or getattr(sender, 'first_name', 'N/A')
+                channel_name = getattr(chat, 'title', 'Unknown Channel')
 
-            # ----- Prepare message history for LLM -----
-            if channel_id not in self.history_cache:
-                self.history_cache[channel_id] = deque(maxlen=self.history_limit)
+                # ----- Prepare message history for LLM -----
+                if channel_id not in self.history_cache:
+                    self.history_cache[channel_id] = deque(maxlen=self.history_limit)
 
-            reply_text = ""
-            if event.message.is_reply:
-                reply_text = await event.get_reply_message()
-                if reply_text and reply_text.text:
-                    reply_sender = await reply_text.get_sender()
-                    reply_sender_name = getattr(reply_sender, 'username', None) or getattr(reply_sender, 'first_name', 'N/A')
-                    reply_text = f"(replying to {reply_sender_name}: '{reply_text.text}')"
+                reply_text = ""
+                if event.message.is_reply:
+                    reply_text = await event.get_reply_message()
+                    if reply_text and reply_text.text:
+                        reply_sender = await reply_text.get_sender()
+                        reply_sender_name = getattr(reply_sender, 'username', None) or getattr(reply_sender, 'first_name', 'N/A')
+                        reply_text = f"(replying to {reply_sender_name}: '{reply_text.text}')"
 
-            new_message = f"{sender_name} {reply_text}: {message_text}"
-            new_message_dict = {"role": "user", "content": new_message}
+                new_message = f"{sender_name} {reply_text}: {message_text}"
+                new_message_dict = {"role": "user", "content": new_message}
 
-            self.history_cache[channel_id].append(new_message_dict)
-            history_for_llm = list(self.history_cache[channel_id])
+                self.history_cache[channel_id].append(new_message_dict)
+                history_for_llm = list(self.history_cache[channel_id])
 
-            print(history_for_llm)
+                print(history_for_llm)
 
-            # Create db entry for processed_messages
-            new_db_entry = ProcessedMessage(
-                telegram_message_id=event.message.id,
-                channel_id=channel_id,
-                channel_name=channel_name,
-                sender_id=sender.id,
-                sender_name=sender_name,
-                message_text=message_text,
-                processed_at=datetime.now(timezone.utc)
-            )
-            db_session.add(new_db_entry)
-            db_session.commit()
-            logging.info(f"Saved new message {event.message.id} from '{channel_name}' to DB.")
+                # Create db entry for processed_messages
+                new_db_entry = ProcessedMessage(
+                    telegram_message_id=event.message.id,
+                    channel_id=channel_id,
+                    channel_name=channel_name,
+                    sender_id=sender.id,
+                    sender_name=sender_name,
+                    message_text=message_text,
+                    processed_at=datetime.now(timezone.utc)
+                )
+                db_session.add(new_db_entry)
+                db_session.flush()
+                logging.info(f"Saved new message {event.message.id} from '{channel_name}' to DB.")
 
-            # ----- LLM analysis -----
-            analysis = analyze_with_openai(history_for_llm)
+                # ----- LLM analysis -----
+                analysis = analyze_with_openai(history_for_llm)
 
-            if not analysis:
-                logging.warning(f"LLM analysis failed for message {event.message.id}.")
-                return
-
-            # Save LLM analysis to db.
-            logging.info(f"LLM analysis complete for message {event.message.id}. Decision: {analysis['decision']}")
-            new_db_entry.llm_decision = analysis.get('decision')
-            new_db_entry.llm_confidence = analysis.get('confidence_score')
-            new_db_entry.llm_rationale = analysis.get('rationale')
-            new_db_entry.token_address = analysis.get('token_address')
-            db_session.commit()
-            logging.info(f"Updated message {event.message.id} in DB with LLM analysis.")
-
-            # ----- Strategy and Trading Step -----
-            if analysis and analysis['decision'] == 'buy':
-                trade_plan = calculate_trade_plan(analysis)
-                if not trade_plan:
-                    logging.info("Strategy module decided not to generate a trade plan.")
+                if not analysis:
+                    logging.warning(f"LLM analysis failed for message {event.message.id}.")
                     return
 
-                logging.info(f"Trade plan generated for token {trade_plan['token_address']}. Executing trade...")
+                # Save LLM analysis to db.
+                logging.info(f"LLM analysis complete for message {event.message.id}. Decision: {analysis['decision']}")
+                new_db_entry.llm_decision = analysis.get('decision')
+                new_db_entry.llm_confidence = analysis.get('confidence_score')
+                new_db_entry.llm_rationale = analysis.get('rationale')
+                new_db_entry.token_address = analysis.get('token_address')
+                logging.info(f"Updated message {event.message.id} in DB with LLM analysis.")
 
-                # Initialize clients
-                wallet = Keypair.from_bytes(base58.b58decode(os.getenv("PRIVATE-KEY")))
-                solana_client = AsyncClient(os.getenv("SOLANA_RPC_URL"))
-                jupiter_client = Jupiter(async_client=solana_client, keypair=wallet)
+                # ----- Strategy and Trading Step -----
+                if analysis and analysis['decision'] == 'buy':
+                    if not analysis['token_address']:
+                        logging.info("LLM did not identify a token address.")
+                        return
 
-                # Execute the buy swap
-                amount_to_spend_lamports = int(trade_plan['purchase_amount_sol'] * 1_000_000_000)
-                buy_tx_sig = await execute_jupiter_swap(trade_plan['token_address'], amount_to_spend_lamports,
-                                                        jupiter_client)
+                    trade_plan = calculate_trade_plan(analysis)
+                    if not trade_plan:
+                        logging.info("Strategy module decided not to generate a trade plan.")
+                        return
 
-                if not buy_tx_sig:
-                    logging.error("Buy swap failed. Aborting trade.")
-                    return
+                    logging.info(f"Trade plan generated for token {trade_plan['token_address']}. Executing trade...")
 
-                # Get the exact amount of tokens received
-                amount_received = await get_amount_received(buy_tx_sig, trade_plan['token_address'], wallet.pubkey(),
-                                                            solana_client)
-
-                if not amount_received:
-                    logging.error("Could not determine amount of tokens received. Cannot set limit orders.")
-                    return
-
-                # Create a new trade record in the database
-                new_trade = Trade(
-                    processed_message_id=new_db_entry.id, token_address=trade_plan['token_address'],
-                    status="open", buy_transaction_sig=buy_tx_sig,
-                    amount_spent_sol=trade_plan['purchase_amount_sol'], amount_received_token=amount_received
-                )
-                db_session.add(new_trade)
-                db_session.commit()
-                logging.info(f"New trade record created with ID: {new_trade.id}")
-
-                # ----- Set Take-Profit and Stop-Loss Limit Orders -----
-
-                # Calculate parameters
-                tp_out_amount_lamports = amount_to_spend_lamports
-                tp_in_amount_lamports = int(amount_received / (1 + trade_plan['take_profit_percentage']))
-                sl_in_amount_lamports = amount_received
-                sl_out_amount_lamports = int(amount_to_spend_lamports * (1 - trade_plan['stop_loss_percentage']))
-
-                # Create the limit orders and get their signatures
-                logging.info("Creating Take-Profit order...")
-                tp_sig = await create_limit_order(
-                    input_mint_str=trade_plan['token_address'],
-                    output_mint_str=os.getenv("INPUT_MINT_ADDRESS", "So11111111111111111111111111111111111111112"),
-                    in_amount_lamports=tp_in_amount_lamports,
-                    out_amount_lamports=tp_out_amount_lamports,
-                    jupiter_client=jupiter_client
-                )
-
-                logging.info("Creating Stop-Loss order...")
-                sl_sig = await create_limit_order(
-                    input_mint_str=trade_plan['token_address'],
-                    output_mint_str=os.getenv("INPUT_MINT_ADDRESS", "So11111111111111111111111111111111111111112"),
-                    in_amount_lamports=sl_in_amount_lamports,
-                    out_amount_lamports=sl_out_amount_lamports,
-                    jupiter_client=jupiter_client
-                )
-
-                # Update the trade record with the price targets and order signatures
-                new_trade.take_profit_price = tp_out_amount_lamports / tp_in_amount_lamports
-                new_trade.stop_loss_price = sl_out_amount_lamports / sl_in_amount_lamports
-                new_trade.tp_order_sig = tp_sig
-                new_trade.sl_order_sig = sl_sig
-                db_session.commit()
-
-                logging.info(f"Trade {new_trade.id} updated with limit order details.")
+                    # Initialize clients
+                    wallet = Keypair.from_bytes(base58.b58decode(os.getenv("PRIVATE-KEY")))
+                    solana_client = AsyncClient(os.getenv("SOLANA_RPC_URL"))
 
         except Exception as e:
             logging.error(f"Error processing message: {e}", exc_info=True)
-            if db_session: db_session.rollback()
-        finally:
-            if db_session: db_session.close()
 
     async def start(self):
         """Connects the client and runs it until disconnected."""
