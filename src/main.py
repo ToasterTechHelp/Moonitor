@@ -1,11 +1,11 @@
-import asyncio
 import os
+import sys
 import logging
+import asyncio
 from dotenv import load_dotenv
 
 from database.database import create_db_and_tables
 from listeners.telegram_listener import TelegramListener
-
 
 # Configure logging for the entire application
 logging.basicConfig(
@@ -17,6 +17,25 @@ logging.basicConfig(
     ]
 )
 
+def validate_env_variables():
+    """Checks if all required environment variables are set."""
+    required_vars = [
+        'TELEGRAM_API_ID', 'TELEGRAM_API_HASH', 'TELEGRAM_SESSION_NAME',
+        'TELEGRAM_TARGET_CHAT_IDS', 'TELEGRAM_HISTORY_LIMIT', 'OPENAI_API_KEY', 'SOLANA_RPC_URL',
+        'PRIVATE_KEY', 'DATABASE_FILE', 'BASE_PURCHASE_SOL',
+        'BASE_TAKE_PROFIT_PCT', 'BASE_STOP_LOSS_PCT',
+        'PURCHASE_INFLUENCE_FACTOR', 'TAKE_PROFIT_INCREASE_FACTOR', 'STOP_LOSS_DECREASE_FACTOR'
+    ]
+
+    missing_vars = [var for var in required_vars if not os.getenv(var)]
+
+    if missing_vars:
+        logging.critical(f"CRITICAL ERROR: Missing required environment variables: {', '.join(missing_vars)}")
+        logging.critical("Please check your .env file. Exiting application.")
+        return False
+
+    logging.info("All required environment variables are present.")
+    return True
 
 async def main():
     """
@@ -24,26 +43,22 @@ async def main():
     Sets up the database and runs the listeners.
     """
     load_dotenv()
+
+    if not validate_env_variables():
+        sys.exit(1)
+
     create_db_and_tables()
 
-    try:
-        API_ID = int(os.getenv('TELEGRAM_API_ID'))
-        API_HASH = os.getenv('TELEGRAM_API_HASH')
-        SESSION_NAME = os.getenv('TELEGRAM_SESSION_NAME')
-        chat_ids_str = os.getenv('TELEGRAM_TARGET_CHAT_IDS', '')
-        TELEGRAM_HISTORY_LIMIT = int(os.getenv('TELEGRAM_HISTORY_LIMIT', '5'))
+    # ----- Load Configuration -----
+    API_ID = int(os.getenv('TELEGRAM_API_ID'))
+    API_HASH = os.getenv('TELEGRAM_API_HASH')
+    SESSION_NAME = os.getenv('TELEGRAM_SESSION_NAME')
+    TELEGRAM_HISTORY_LIMIT = int(os.getenv('TELEGRAM_HISTORY_LIMIT', '5'))
+    chat_ids_str = os.getenv('TELEGRAM_TARGET_CHAT_IDS', '')
+    TARGET_CHAT_IDS = [int(chat_id.strip()) for chat_id in chat_ids_str.split(',') if chat_id.strip()]
 
-        if not all([API_ID, API_HASH, SESSION_NAME]):
-            raise ValueError("Missing required Telegram environment variables")
-
-        TARGET_CHAT_IDS = [int(chat_id.strip()) for chat_id in chat_ids_str.split(',') if chat_id.strip()]
-
-        if not TARGET_CHAT_IDS:
-            raise ValueError("No TARGET_CHAT_IDS found in .env file.")
-
-    except (ValueError, TypeError) as e:
-        logging.error(f"Error loading environment variables: {e}")
-        return
+    if not TARGET_CHAT_IDS:
+        raise ValueError("No TARGET_CHAT_IDS found in .env file.")
 
     # Create an instance of our Telegram listener
     telegram_listener = TelegramListener(
