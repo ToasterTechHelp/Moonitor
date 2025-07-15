@@ -1,14 +1,14 @@
 import os
 import logging
 from contextlib import contextmanager
-from dotenv import load_dotenv
 from datetime import datetime, timezone
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, Float, Text, ForeignKey
 from sqlalchemy.orm import sessionmaker, declarative_base, relationship
 from sqlalchemy.exc import SQLAlchemyError
 
 
-load_dotenv()
+logger = logging.getLogger(__name__)
+
 DATABASE_FILE = os.getenv("DATABASE_FILE", "activity_logger.db")
 
 # Simple SQLite configuration - no pooling needed
@@ -62,15 +62,15 @@ class Trade(Base):
 
 def create_db_and_tables():
     """Creates the database file and all tables."""
-    logging.info("Initializing database...")
+    logger.info("Initializing database...")
     try:
         Base.metadata.create_all(bind=engine)
-        logging.info("Database and tables created successfully.")
+        logger.info("Database and tables created successfully.")
     except SQLAlchemyError as e:
-        logging.error(f"Database error creating tables: {e}", exc_info=True)
+        logger.error(f"Database error creating tables: {e}", exc_info=True)
         raise
     except Exception as e:
-        logging.error(f"Unexpected error creating database tables: {e}", exc_info=True)
+        logger.error(f"Unexpected error creating database tables: {e}", exc_info=True)
         raise
 
 @contextmanager
@@ -85,11 +85,11 @@ def get_db_session():
         session.commit()
     except SQLAlchemyError as e:
         session.rollback()
-        logging.error(f"Database error: {e}", exc_info=True)
+        logger.error(f"Database error: {e}", exc_info=True)
         raise
     except Exception as e:
         session.rollback()
-        logging.error(f"Unexpected error in database session: {e}", exc_info=True)
+        logger.error(f"Unexpected error in database session: {e}", exc_info=True)
         raise
     finally:
         session.close()

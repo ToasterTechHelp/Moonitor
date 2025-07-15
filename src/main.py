@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from database.database import create_db_and_tables
 from listeners.telegram_listener import TelegramListener
 
-# Configure logging for the entire application
+# Configure logger for the entire application
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -16,6 +16,9 @@ logging.basicConfig(
         logging.StreamHandler()
     ]
 )
+
+logger = logging.getLogger(__name__)
+
 
 def validate_env_variables():
     """Checks if all required environment variables are set."""
@@ -30,11 +33,11 @@ def validate_env_variables():
     missing_vars = [var for var in required_vars if not os.getenv(var)]
 
     if missing_vars:
-        logging.critical(f"CRITICAL ERROR: Missing required environment variables: {', '.join(missing_vars)}")
-        logging.critical("Please check your .env file. Exiting application.")
+        logger.critical(f"CRITICAL ERROR: Missing required environment variables: {', '.join(missing_vars)}")
+        logger.critical("Please check your .env file. Exiting application.")
         return False
 
-    logging.info("All required environment variables are present.")
+    logger.info("All required environment variables are present.")
     return True
 
 async def main():
@@ -76,6 +79,6 @@ if __name__ == '__main__':
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logging.info("Application shutting down.")
+        logger.info("Application shutting down.")
     except Exception as e:
-        logging.exception("An unexpected error occurred in the main application loop!")
+        logger.exception("An unexpected error occurred in the main application loop!")

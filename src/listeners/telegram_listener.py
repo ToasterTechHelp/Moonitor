@@ -1,19 +1,16 @@
-import base58
-
 import os
 import logging
 import asyncio
 from collections import deque
 from datetime import datetime, timezone
 from telethon import TelegramClient, events
-from solders.keypair import Keypair
-from solana.rpc.async_api import AsyncClient
 
 from src.database.database import get_db_session, ProcessedMessage, Trade  # Changed import
 from src.llm.openai_analyzer import analyze_with_openai
 from src.trading.strategy import calculate_trade_plan
-from src.trading.trader import execute_jupiter_swap, create_limit_order, get_amount_received
 
+
+logger = logging.getLogger(__name__)
 
 class TelegramListener:
     """
@@ -32,8 +29,8 @@ class TelegramListener:
         self.history_cache = {}
         self.history_limit = history_limit
 
-        logging.info(f"TelegramListener initialized for session '{self.session_name}'")
-        logging.info(f"Will listen to chat IDs: {self.target_chat_ids}")
+        logger.info(f"TelegramListener initialized for session '{self.session_name}'")
+        logger.info(f"Will listen to chat IDs: {self.target_chat_ids}")
 
         # Event handler for new messages in the target chats.
         @self.client.on(events.NewMessage(chats=self.target_chat_ids))
@@ -48,7 +45,7 @@ class TelegramListener:
         """
         message_text = event.message.text
         if not message_text:
-            logging.info(f"Skipping message (ID: {event.message.id}) because it contains no text.")
+            logger.info(f"Skipping message (ID: {event.message.id}) because it contains no text.")
             return
 
         channel_id = event.chat_id
@@ -93,47 +90,52 @@ class TelegramListener:
                 )
                 db_session.add(new_db_entry)
                 db_session.flush()
-                logging.info(f"Saved new message {event.message.id} from '{channel_name}' to DB.")
+                logger.info(f"Saved new message {event.message.id} from '{channel_name}' to DB.")
 
                 # ----- LLM analysis -----
                 analysis = analyze_with_openai(history_for_llm)
 
                 if not analysis:
-                    logging.warning(f"LLM analysis failed for message {event.message.id}.")
+                    logger.warning(f"LLM analysis failed for message {event.message.id}.")
                     return
 
                 # Save LLM analysis to db.
-                logging.info(f"LLM analysis complete for message {event.message.id}. Decision: {analysis['decision']}")
+                logger.info(f"LLM analysis complete for message {event.message.id}. Decision: {analysis['decision']}")
                 new_db_entry.llm_decision = analysis.get('decision')
                 new_db_entry.llm_confidence = analysis.get('confidence_score')
                 new_db_entry.llm_rationale = analysis.get('rationale')
                 new_db_entry.token_address = analysis.get('token_address')
-                logging.info(f"Updated message {event.message.id} in DB with LLM analysis.")
+                logger.info(f"Updated message {event.message.id} in DB with LLM analysis.")
 
                 # ----- Strategy and Trading Step -----
                 if analysis and analysis['decision'] == 'buy':
-                    if not analysis['token_address']:
-                        logging.info("LLM did not identify a token address.")
+                    token_address = analysis.get('token_address')
+                    if not token_address:
+                        logger.warning("LLM analysis suggested a 'buy' but provided no token address.")
+                        return
+
+                    existing_trade = db_session.query(Trade).filter_by(
+                        token_address=token_address,
+                    ).first()
+
+                    if existing_trade:
+                        logger.info(f"Skipping trade for {token_address}. An open position already exists.")
                         return
 
                     trade_plan = calculate_trade_plan(analysis)
                     if not trade_plan:
-                        logging.info("Strategy module decided not to generate a trade plan.")
+                        logger.info("Strategy module decided not to generate a trade plan.")
                         return
 
-                    logging.info(f"Trade plan generated for token {trade_plan['token_address']}. Executing trade...")
-
-                    # Initialize clients
-                    wallet = Keypair.from_bytes(base58.b58decode(os.getenv("PRIVATE-KEY")))
-                    solana_client = AsyncClient(os.getenv("SOLANA_RPC_URL"))
+                    logger.info(f"Trade plan generated for token {trade_plan['token_address']}. Executing trade...")
 
         except Exception as e:
-            logging.error(f"Error processing message: {e}", exc_info=True)
+            logger.error(f"Error processing message: {e}", exc_info=True)
 
     async def start(self):
         """Connects the client and runs it until disconnected."""
         self.start_time = datetime.now(timezone.utc)
-        logging.info(f"Starting client for session '{self.session_name}'... Will only process messages after {self.start_time}")
+        logger.info(f"Starting client for session '{self.session_name}'... Will only process messages after {self.start_time}")
         await self.client.start()
-        logging.info(f"Client for session '{self.session_name}' started successfully.")
+        logger.info(f"Client for session '{self.session_name}' started successfully.")
         await self.client.run_until_disconnected()
