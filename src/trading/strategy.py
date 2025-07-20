@@ -1,6 +1,7 @@
 import os
 import logging
 
+
 def calculate_trade_plan(analysis: dict) -> dict | None:
     """
     Calculates a detailed trade plan based on LLM analysis and settings from env.
@@ -12,7 +13,7 @@ def calculate_trade_plan(analysis: dict) -> dict | None:
     Returns:
         dict | None: A dictionary containing the trade plan, or None if the decision is not 'buy'.
                      The plan includes:
-                     - 'purchase_amount_sol': The amount of SOL to spend.
+                     - 'purchase_amount_lamports': The amount in lamports to spend.
                      - 'take_profit_percentage': The target gain percentage for the take-profit order.
                      - 'stop_loss_percentage': The percentage loss for the stop-loss order.
     """
@@ -35,9 +36,12 @@ def calculate_trade_plan(analysis: dict) -> dict | None:
 
         # ----- Calculate Dynamic Trade Parameters -----
 
-        # 1. Calculate final purchase amount
+        # 1. Calculate final purchase amount in SOL, then convert to lamports
         purchase_multiplier = 1 + (confidence_score * purchase_influence_factor)
         final_purchase_sol = round(base_purchase_sol * purchase_multiplier, 2)
+
+        # Convert SOL to lamports (1 SOL = 1,000,000,000 lamports)
+        final_purchase_lamports = int(final_purchase_sol * 1_000_000_000)
 
         # 2. Calculate final take-profit percentage
         tp_multiplier = 1 + (confidence_score * tp_increase_factor)
@@ -49,7 +53,7 @@ def calculate_trade_plan(analysis: dict) -> dict | None:
         final_stop_loss_pct = round(min(calculated_stop_loss, 0.99), 2)
 
         trade_plan = {
-            "purchase_amount_sol": final_purchase_sol,
+            "amount": final_purchase_lamports,
             "take_profit_percentage": final_take_profit_pct,
             "stop_loss_percentage": final_stop_loss_pct,
             "token_address": analysis.get('token_address')
@@ -64,3 +68,32 @@ def calculate_trade_plan(analysis: dict) -> dict | None:
     except Exception as e:
         logging.error(f"An unexpected error occurred in calculate_trade_plan: {e}", exc_info=True)
         return None
+
+
+def calculate_take_profit_amounts(amount_spent_sol: float, amount_received_token: float, 
+                                take_profit_percentage: float) -> tuple[int, int]:
+    """Calculate how much memecoin to sell to recover initial SOL investment.
+
+    Args:
+        amount_spent_sol: SOL spent on initial purchase
+        amount_received_token: Memecoin tokens received
+        take_profit_percentage: Target profit (e.g., 0.3 for 30%)
+
+    Returns:
+        (tokens_to_sell, sol_to_receive_in_lamports)
+    """
+    try:
+        # Calculate target price per token (current price + profit)
+        current_price = amount_spent_sol / amount_received_token
+        target_price = current_price * (1 + take_profit_percentage)
+        
+        # Calculate tokens needed to sell to recover initial investment
+        tokens_to_sell = int(amount_spent_sol / target_price)
+        sol_to_receive = int(amount_spent_sol * 1_000_000_000)  # Convert to lamports
+        
+        logging.info(f"Take profit: Sell {tokens_to_sell} tokens for {amount_spent_sol} SOL at {take_profit_percentage*100}% profit")
+        return tokens_to_sell, sol_to_receive
+        
+    except (ZeroDivisionError, ValueError) as e:
+        logging.error(f"Error calculating take profit amounts: {e}")
+        return 0, 0

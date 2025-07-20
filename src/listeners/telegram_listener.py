@@ -5,9 +5,10 @@ from collections import deque
 from datetime import datetime, timezone
 from telethon import TelegramClient, events
 
-from src.database.database import get_db_session, ProcessedMessage, Trade  # Changed import
+from src.database.database import get_db_session, ProcessedMessage, Trade
 from src.llm.openai_analyzer import analyze_with_openai
-from src.trading.strategy import calculate_trade_plan
+from src.trading.strategy import calculate_trade_plan, calculate_take_profit_amounts
+from src.trading.trader import JupiterTrader
 
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,8 @@ class TelegramListener:
         self.session_name = session_name
         self.history_cache = {}
         self.history_limit = history_limit
+        self.trader = JupiterTrader()
+        self.sell_token = os.getenv("SELL_TOKEN")
 
         logger.info(f"TelegramListener initialized for session '{self.session_name}'")
         logger.info(f"Will listen to chat IDs: {self.target_chat_ids}")
@@ -119,7 +122,7 @@ class TelegramListener:
                     ).first()
 
                     if existing_trade:
-                        logger.info(f"Skipping trade for {token_address}. An open position already exists.")
+                        logger.info(f"Skipping trade for {token_address}. Trade history exists.")
                         return
 
                     trade_plan = calculate_trade_plan(analysis)
@@ -127,7 +130,92 @@ class TelegramListener:
                         logger.info("Strategy module decided not to generate a trade plan.")
                         return
 
-                    logger.info(f"Trade plan generated for token {trade_plan['token_address']}. Executing trade...")
+                    logger.info(f"Trade plan generated for token {token_address}. Executing trade...")
+
+                    # Execute the swap
+                    success, signature, result = self.trader.market_swap(
+                        input_mint=self.sell_token,
+                        output_mint=trade_plan['token_address'],
+                        amount=trade_plan['amount']
+                    )
+
+                    # Create Trade record in database
+                    try:
+                        new_trade = Trade(
+                            processed_message_id=new_db_entry.id,
+                            token_address=token_address,
+                            status="failed" if not success else "open",
+                            buy_transaction_sig=signature if success else None,
+                            amount_spent_sol=None,  # Will be filled from actual execution results
+                            amount_received_token=None,  # Will be filled from actual execution results
+                            take_profit_percentage=trade_plan.get('take_profit_percentage'),
+                            stop_loss_percentage=trade_plan.get('stop_loss_percentage'),
+                        )
+
+                        if success:
+                            # Extract actual amounts from Ultra API result
+                            if result:
+                                # inputAmountResult = actual SOL spent (in lamports)
+                                if 'inputAmountResult' in result:
+                                    actual_sol_spent = float(result['inputAmountResult']) / 1_000_000_000
+                                    new_trade.amount_spent_sol = actual_sol_spent
+
+                                # outputAmountResult = actual tokens received (in token's smallest unit)
+                                if 'outputAmountResult' in result:
+                                    new_trade.amount_received_token = float(result['outputAmountResult'])
+
+                                logger.info(
+                                    f"Actual trade: Spent {actual_sol_spent:.6f} SOL, received {result.get('outputAmountResult', 'unknown')} tokens")
+
+                            logger.info(f"Transaction: https://solscan.io/tx/{signature}")
+
+                        else:
+                            logger.error(f"Trade failed for token {token_address}")
+                            if result and 'error' in result:
+                                logger.error(f"Error details: {result['error']}")
+
+                        db_session.add(new_trade)
+                        db_session.flush()
+
+                        logger.info(f"Trade record saved to database with ID: {new_trade.id}")
+
+                        # Set up limit orders for take profit if trade was successful
+                        if success and new_trade.status == "open":
+                            try:
+                                # Calculate take profit amounts
+                                making_amount, taking_amount = calculate_take_profit_amounts(
+                                    amount_spent_sol=new_trade.amount_spent_sol,
+                                    amount_received_token=new_trade.amount_received_token,
+                                    take_profit_percentage=trade_plan['take_profit_percentage']
+                                )
+
+                                if making_amount > 0 and taking_amount > 0:
+                                    # Create take profit limit order
+                                    tp_success, tp_signature, tp_result = self.trader.create_limit_order(
+                                        input_mint=token_address,  # Selling the coin
+                                        output_mint=self.sell_token,  # Receiving SOL
+                                        making_amount=making_amount,
+                                        taking_amount=taking_amount
+                                    )
+
+                                    if tp_success:
+                                        new_trade.tp_order_sig = tp_signature
+                                        db_session.flush()
+
+                                        logger.info(f"Take profit limit order created successfully for trade {new_trade.id}")
+                                        logger.info(f"Signature: {tp_signature}")
+                                    else:
+                                        logger.error(f"Failed to create take profit limit order for trade {new_trade.id}")
+                                        if tp_result and 'error' in tp_result:
+                                            logger.error(f"Take profit order error: {tp_result['error']}")
+                                else:
+                                    logger.info(f"Invalid take profit amounts calculated for trade {new_trade.id}")
+
+                            except Exception as e:
+                                logger.error(f"Error setting up limit orders for trade {new_trade.id}: {e}")
+
+                    except Exception as trade_error:
+                        logger.error(f"Error creating trade record: {trade_error}", exc_info=True)
 
         except Exception as e:
             logger.error(f"Error processing message: {e}", exc_info=True)

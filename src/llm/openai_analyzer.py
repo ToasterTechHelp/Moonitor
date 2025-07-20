@@ -24,8 +24,8 @@ def analyze_with_openai(message_list: list[dict]) -> dict | None:
         # This prompt is now simplified because we are sending a structured message list.
         system_prompt = """
         You are a financial analyst specializing in identifying trading signals for memecoins on the Solana blockchain from Telegram messages.
-        Your task is to analyze the conversation history provided and determine if the LAST message in the list contains a credible trading signal.
-        Use the previous messages for context.
+        Your task is to analyze the conversation history provided and determine if the LAST message in the list contains a trading signal.
+        Use the previous messages for context. Usually, if a coin address is provided, it should be bought, unless the context clearly indicates to not buy.
 
         You must return your analysis in a strict JSON format. The JSON object must contain the following keys:
         - "decision": Your decision, which must be one of two strings: "buy" or "hold".
@@ -33,8 +33,8 @@ def analyze_with_openai(message_list: list[dict]) -> dict | None:
         - "rationale": A brief, one-sentence explanation for your decision, focusing on the last message.
         - "token_address": The Solana contract address of the token mentioned. If no address is found, this must be null.
 
-        If the last message is irrelevant, a joke, or does not contain a clear signal (even with context), you must return "hold" with a 0 confidence_score.
-        Do not make a "buy" decision unless the last message itself contains actionable information like a token address or a strong call to action.
+        If the last message is irrelevant, a joke, or is a signal to not buy, you must return "hold" with a 0 confidence_score.
+        Do not make a "buy" decision unless the last message itself contains actionable information like a token address or a call to action.
         """
 
         messages_to_send = [
