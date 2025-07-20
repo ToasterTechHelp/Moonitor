@@ -217,6 +217,13 @@ class TelegramListener:
                     except Exception as trade_error:
                         logger.error(f"Error creating trade record: {trade_error}", exc_info=True)
 
+                    # TODO:
+                    # - Add discord message notification
+                    # - Find out when limit order made and discord notif
+                    # - Seperate process_new_message.
+                    # - Create discord listener.
+                    # - Add stop loss feature.
+
         except Exception as e:
             logger.error(f"Error processing message: {e}", exc_info=True)
 

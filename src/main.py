@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 
 from database.database import create_db_and_tables
 from listeners.telegram_listener import TelegramListener
+from monitor.limit_monitor import check_limit_order
 
 # Configure logger for the entire application
 logging.basicConfig(
@@ -40,6 +41,15 @@ def validate_env_variables():
     logger.info("All required environment variables are present.")
     return True
 
+async def limit_order_monitor(telegram_listener):
+    """Simple background task to check orders every minute."""
+    while True:
+        try:
+            await asyncio.sleep(60)  # Wait 1 minute
+            check_limit_order(telegram_listener.trader)
+        except Exception as e:
+            logger.error(f"Error in order monitoring: {e}")
+
 async def main():
     """
     The main entry point of the application.
@@ -72,7 +82,10 @@ async def main():
         history_limit=TELEGRAM_HISTORY_LIMIT
     )
 
-    await telegram_listener.start()
+    await asyncio.gather(
+        telegram_listener.start(),
+        limit_order_monitor(telegram_listener)
+    )
 
 
 if __name__ == '__main__':
