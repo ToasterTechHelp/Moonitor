@@ -12,6 +12,7 @@ from solders.transaction import VersionedTransaction
 
 logger = logging.getLogger(__name__)
 
+
 class JupiterTrader:
     """Jupiter Trading API client for Solana memecoin trading.
 
@@ -19,7 +20,6 @@ class JupiterTrader:
     - Market swaps via Ultra API
     - Limit orders via Trigger API (to be implemented)
     """
-
 
     def __init__(self):
         """Initialize Jupiter trader using environment variables."""
@@ -175,7 +175,7 @@ class JupiterTrader:
             return None
 
     def market_swap(self, input_mint: str, output_mint: str,
-                   amount: int) -> Tuple[bool, Optional[str], Optional[Dict[str, Any]]]:
+                    amount: int) -> Tuple[bool, Optional[str], Optional[Dict[str, Any]]]:
         """Perform a complete market swap.
 
         Args:
@@ -211,8 +211,9 @@ class JupiterTrader:
 
         return success, signature, result
 
-    def create_limit_order(self, input_mint: str, output_mint: str, 
-                          making_amount: int, taking_amount: int) -> Tuple[bool, Optional[str], Optional[Dict[str, Any]]]:
+    def create_limit_order(self, input_mint: str, output_mint: str,
+                           making_amount: int, taking_amount: int) -> Tuple[
+        bool, Optional[str], Optional[Dict[str, Any]]]:
         """Create a limit order using Jupiter Trigger API.
 
         Args:
@@ -239,7 +240,7 @@ class JupiterTrader:
         }
 
         endpoint = f"{self.base_url}/trigger/v1/createOrder"
-        
+
         try:
             # Step 1: Create order
             response = requests.post(endpoint, json=order_request, headers=self.headers)
@@ -323,4 +324,3 @@ class JupiterTrader:
         except Exception as e:
             logger.error(f"Error executing limit order: {e}")
             return None
-

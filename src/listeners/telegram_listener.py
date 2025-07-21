@@ -9,6 +9,7 @@ from src.database.database import get_db_session, ProcessedMessage, Trade
 from src.llm.openai_analyzer import analyze_with_openai
 from src.trading.strategy import calculate_trade_plan, calculate_take_profit_amounts
 from src.trading.trader import JupiterTrader
+from src.notifications.discord_notifier import DiscordNotifier
 
 
 logger = logging.getLogger(__name__)
@@ -30,6 +31,7 @@ class TelegramListener:
         self.history_cache = {}
         self.history_limit = history_limit
         self.trader = JupiterTrader()
+        self.discord = DiscordNotifier()
         self.sell_token = os.getenv("SELL_TOKEN")
 
         logger.info(f"TelegramListener initialized for session '{self.session_name}'")
@@ -110,6 +112,13 @@ class TelegramListener:
                 new_db_entry.token_address = analysis.get('token_address')
                 logger.info(f"Updated message {event.message.id} in DB with LLM analysis.")
 
+                # Send Discord notification for LLM analysis
+                self.discord.send_message(
+                    f"LLM Decision: {analysis['decision'].upper()} | "
+                    f"Token: {analysis.get('token_address', 'N/A')} | "
+                    f"Confidence: {analysis.get('confidence_score', 0):.2%}"
+                )
+
                 # ----- Strategy and Trading Step -----
                 if analysis and analysis['decision'] == 'buy':
                     token_address = analysis.get('token_address')
@@ -169,10 +178,20 @@ class TelegramListener:
 
                             logger.info(f"Transaction: https://solscan.io/tx/{signature}")
 
+                            # Send Discord notification for successful trade
+                            self.discord.send_message(
+                                f"✅ TRADE EXECUTED: {token_address} | "
+                                f"Spent: {new_trade.amount_spent_sol:.6f} SOL | "
+                                f"TX: https://solscan.io/tx/{signature}"
+                            )
+
                         else:
                             logger.error(f"Trade failed for token {token_address}")
                             if result and 'error' in result:
                                 logger.error(f"Error details: {result['error']}")
+
+                            # Send Discord notification for failed trade
+                            self.discord.send_message(f"❌ TRADE FAILED: {token_address}")
 
                         db_session.add(new_trade)
                         db_session.flush()
@@ -204,10 +223,19 @@ class TelegramListener:
 
                                         logger.info(f"Take profit limit order created successfully for trade {new_trade.id}")
                                         logger.info(f"Signature: {tp_signature}")
+
+                                        # Send Discord notification for successful limit order
+                                        self.discord.send_message(
+                                            f"📋 TAKE PROFIT ORDER CREATED: {token_address} | "
+                                            f"TX: https://solscan.io/tx/{tp_signature}"
+                                        )
                                     else:
                                         logger.error(f"Failed to create take profit limit order for trade {new_trade.id}")
                                         if tp_result and 'error' in tp_result:
                                             logger.error(f"Take profit order error: {tp_result['error']}")
+
+                                        # Send Discord notification for failed limit order
+                                        self.discord.send_message(f"⚠️ TAKE PROFIT ORDER FAILED: {token_address}")
                                 else:
                                     logger.info(f"Invalid take profit amounts calculated for trade {new_trade.id}")
 
@@ -216,13 +244,6 @@ class TelegramListener:
 
                     except Exception as trade_error:
                         logger.error(f"Error creating trade record: {trade_error}", exc_info=True)
-
-                    # TODO:
-                    # - Add discord message notification
-                    # - Find out when limit order made and discord notif
-                    # - Seperate process_new_message.
-                    # - Create discord listener.
-                    # - Add stop loss feature.
 
         except Exception as e:
             logger.error(f"Error processing message: {e}", exc_info=True)
