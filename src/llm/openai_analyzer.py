@@ -34,7 +34,6 @@ def analyze_with_openai(message_list: list[dict]) -> dict | None:
         - "token_address": The Solana contract address of the token mentioned. If no address is found, this must be null.
 
         If the last message is irrelevant, a joke, or is a signal to not buy, you must return "hold" with a 0 confidence_score.
-        Do not make a "buy" decision unless the last message itself contains actionable information like a token address or a call to action.
         """
 
         messages_to_send = [

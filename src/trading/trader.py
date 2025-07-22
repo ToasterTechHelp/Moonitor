@@ -14,11 +14,11 @@ logger = logging.getLogger(__name__)
 
 
 class JupiterTrader:
-    """Jupiter Trading API client for Solana memecoin trading.
+    """Jupiter Trading API client for Solana trading.
 
     This class provides a clean interface to Jupiter API for:
     - Market swaps via Ultra API
-    - Limit orders via Trigger API (to be implemented)
+    - Limit orders via Trigger API
     """
 
     def __init__(self):
@@ -35,16 +35,43 @@ class JupiterTrader:
         self.headers = {"x-api-key": self.api_key} if self.api_key else {}
 
         # Trade configuration
-        self.slippage = os.getenv("SLIPPAGE", 300)
+        self.slippage = int(os.getenv("SLIPPAGE", 300))
 
         # Setup wallet
         try:
             private_key_bytes = base58.b58decode(private_key)
+            if len(private_key_bytes) != 64:
+                raise ValueError("Invalid private key length")
             self.wallet = Keypair.from_bytes(private_key_bytes)
             logger.info(f"Wallet initialized: {self.wallet.pubkey()}")
         except Exception as e:
             logger.error(f"Failed to initialize wallet: {e}")
             raise
+
+    def _handle_response_error(self, response, operation_name: str):
+        """Handle common response errors and return error dict."""
+        try:
+            error_data = response.json()
+            logger.error(f"{operation_name} API error: {error_data}")
+            return {"error": error_data}
+        except:
+            logger.error(f"{operation_name} error response: {response.text}")
+            return {"error": f"HTTP {response.status_code}: {response.text}"}
+
+    def _make_request(self, method, url, **kwargs):
+        """Make HTTP request with simple retry."""
+        for attempt in range(2):  # Just 2 attempts
+            try:
+                kwargs['timeout'] = 30
+                if method == "GET":
+                    return requests.get(url, **kwargs)
+                else:
+                    return requests.post(url, **kwargs)
+            except requests.exceptions.RequestException as e:
+                if attempt == 0:  # Only retry once
+                    logger.warning(f"Request failed, retrying: {e}")
+                    continue
+                raise
 
     def get_quote(self, input_mint: str, output_mint: str, amount: int) -> Optional[Dict[str, Any]]:
         """Get a swap quote from Jupiter.
@@ -70,8 +97,11 @@ class JupiterTrader:
         }
 
         try:
-            response = requests.get(endpoint, params=params, headers=self.headers)
-            response.raise_for_status()
+            response = self._make_request("GET", endpoint, params=params, headers=self.headers)
+            if not response.ok:
+                logger.error(f"Quote API error: {response.status_code}")
+                return None
+
             quote = response.json()
 
             if 'outAmount' in quote:
@@ -149,7 +179,7 @@ class JupiterTrader:
         }
 
         try:
-            response = requests.post(endpoint, json=execute_request, headers=self.headers)
+            response = self._make_request("POST", endpoint, json=execute_request, headers=self.headers)
             response.raise_for_status()
             result = response.json()
 
@@ -217,7 +247,7 @@ class JupiterTrader:
         """Create a limit order using Jupiter Trigger API.
 
         Args:
-            input_mint: Token we're selling (memecoin)
+            input_mint: Token we're selling
             output_mint: Token we want to receive (SOL)
             making_amount: Amount of input token to sell (in token's smallest unit)
             taking_amount: Amount of output token we want to receive (in lamports for SOL)
@@ -243,10 +273,13 @@ class JupiterTrader:
 
         try:
             # Step 1: Create order
-            response = requests.post(endpoint, json=order_request, headers=self.headers)
-            response.raise_for_status()
-            order_data = response.json()
+            response = self._make_request("POST", endpoint, json=order_request, headers=self.headers)
 
+            # Check for errors
+            if not response.ok:
+                return False, None, self._handle_response_error(response, "Limit order")
+
+            order_data = response.json()
             logger.info(f"Order created successfully: {order_data}")
 
             # Step 2: Sign transaction
@@ -300,7 +333,7 @@ class JupiterTrader:
         }
 
         try:
-            response = requests.post(endpoint, json=execute_request, headers=self.headers)
+            response = self._make_request("POST", endpoint, json=execute_request, headers=self.headers)
             response.raise_for_status()
             result = response.json()
 

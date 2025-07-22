@@ -3,6 +3,7 @@ import requests
 from datetime import datetime, timezone
 
 from src.database.database import get_db_session, Trade
+from src.notifications.discord_notifier import DiscordNotifier
 
 logger = logging.getLogger(__name__)
 
@@ -11,6 +12,8 @@ def check_limit_order(trader):
     """
     Check for non-active orders and update database with appropriate status and sell information.
     """
+    discord = DiscordNotifier()
+
     try:
         # Get ALL order history from Jupiter API
         endpoint = f"{trader.base_url}/trigger/v1/getTriggerOrders"
@@ -63,11 +66,25 @@ def check_limit_order(trader):
                     if order_status == 'completed':
                         trade.status = order_status
                         trade.sell_transaction_sig = order_info['closeTx']
+
+                        # Send Discord notification for successful sale
+                        if trade.sell_transaction_sig:
+                            discord.send_message(
+                                f"💰 TAKE PROFIT EXECUTED: {trade.token_address} | "
+                                f"TX: https://solscan.io/tx/{trade.sell_transaction_sig}"
+                            )
+
                         logger.info(f"Trade {trade.id} completed successfully")
                     else:
-                        # Handle any other non-active statuses
+                        # Handle any other non-active statuses (cancelled, expired, etc.)
                         trade.status = order_status
-                        logger.info(f"Trade {trade.id} closed with unknown status: {order_status}")
+
+                        # Send Discord notification for non-completed status
+                        discord.send_message(
+                            f"⚠️ TAKE PROFIT {order_status.upper()}: {trade.token_address}"
+                        )
+
+                        logger.info(f"Trade {trade.id} closed with status: {order_status}")
 
                     # Parse updatedAt timestamp if available
                     if order_info['updatedAt']:
@@ -94,3 +111,5 @@ def check_limit_order(trader):
 
     except Exception as e:
         logger.error(f"Error checking orders: {e}")
+        # Send Discord notification for monitoring errors
+        discord.send_message(f"🚨 ERROR: Limit order monitoring failed - {str(e)[:100]}")
