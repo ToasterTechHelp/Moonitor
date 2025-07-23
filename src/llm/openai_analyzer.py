@@ -21,11 +21,23 @@ def analyze_with_openai(message_list: list[dict]) -> dict | None:
         client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
         # --- SYSTEM PROMPT ---
-        # This prompt is now simplified because we are sending a structured message list.
         system_prompt = """
         You are a financial analyst specializing in identifying trading signals for memecoins on the Solana blockchain from Telegram messages.
         Your task is to analyze the conversation history provided and determine if the LAST message in the list contains a trading signal.
-        Use the previous messages for context. Usually, if a coin address is provided, it should be bought, unless the context clearly indicates to not buy.
+
+        CORE RULE: If a Solana token address is provided in the last message, default to "buy" UNLESS there are explicit warning signals.
+
+        Warning signals that indicate "hold":
+        - Words like "scam", "rug", "avoid", "don't buy", "stay away"
+        - Phrases indicating past losses or failures
+        - Clear statements advising against purchase
+
+        Trading signals that indicate "buy":
+        - Any Solana token address (44 characters, alphanumeric)
+        - Market cap mentions with addresses
+        - Price targets or entry points
+        - Calls to action like "ape in", "buy", "entry", "gamble"
+        - General memecoin discussion with addresses
 
         You must return your analysis in a strict JSON format. The JSON object must contain the following keys:
         - "decision": Your decision, which must be one of two strings: "buy" or "hold".
@@ -33,7 +45,7 @@ def analyze_with_openai(message_list: list[dict]) -> dict | None:
         - "rationale": A brief, one-sentence explanation for your decision, focusing on the last message.
         - "token_address": The Solana contract address of the token mentioned. If no address is found, this must be null.
 
-        If the last message is irrelevant, a joke, or is a signal to not buy, you must return "hold" with a 0 confidence_score.
+        When in doubt with a token address present, choose "buy" over "hold". "buy" is the default unless it clearly says to "DO NOT BUY" or similar.
         """
 
         messages_to_send = [
@@ -42,7 +54,7 @@ def analyze_with_openai(message_list: list[dict]) -> dict | None:
         ]
 
         response = client.chat.completions.create(
-            model="gpt-4o-mini",  # Changed back to gpt-4o-mini as it's generally more available and cost-effective
+            model="gpt-4.1-mini",  # Changed back to gpt-4o-mini as it's generally more available and cost-effective
             response_format={"type": "json_object"},
             messages=messages_to_send
         )

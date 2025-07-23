@@ -4,9 +4,9 @@ import logging
 import asyncio
 from dotenv import load_dotenv
 
-from database.database import create_db_and_tables
-from listeners.telegram_listener import TelegramListener
-from monitor.limit_monitor import check_limit_order
+from src.database.database import create_db_and_tables
+from src.listeners.telegram_listener import TelegramListener
+from src.monitor.limit_monitor import check_limit_order
 
 # Configure logger for the entire application
 logging.basicConfig(

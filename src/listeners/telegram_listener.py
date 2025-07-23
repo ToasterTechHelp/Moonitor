@@ -81,8 +81,6 @@ class TelegramListener:
                 self.history_cache[channel_id].append(new_message_dict)
                 history_for_llm = list(self.history_cache[channel_id])
 
-                print(history_for_llm)
-
                 # Create db entry for processed_messages
                 new_db_entry = ProcessedMessage(
                     telegram_message_id=event.message.id,
@@ -114,9 +112,10 @@ class TelegramListener:
 
                 # Send Discord notification for LLM analysis
                 self.discord.send_message(
-                    f"LLM Decision: {analysis['decision'].upper()} | "
-                    f"Token: {analysis.get('token_address', 'N/A')} | "
-                    f"Confidence: {analysis.get('confidence_score', 0):.2%}"
+                    f"LLM Decision: {analysis['decision'].upper()}\n"
+                    f"Token: {analysis.get('token_address', 'N/A')}\n"
+                    f"Confidence: {analysis.get('confidence_score', 0):.2%}\n"
+                    f"Rationale: {analysis.get('rationale', 'N/A')}"
                 )
 
                 # ----- Strategy and Trading Step -----
@@ -180,8 +179,8 @@ class TelegramListener:
 
                             # Send Discord notification for successful trade
                             self.discord.send_message(
-                                f"✅ TRADE EXECUTED: {token_address} | "
-                                f"Spent: {new_trade.amount_spent_sol:.6f} SOL | "
+                                f"✅ TRADE EXECUTED: {token_address}\n"
+                                f"Spent: {new_trade.amount_spent_sol:.6f} SOL\n"
                                 f"TX: https://solscan.io/tx/{signature}"
                             )
 
