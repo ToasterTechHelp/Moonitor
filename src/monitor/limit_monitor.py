@@ -25,7 +25,7 @@ def check_limit_order(trader):
         orders_data = response.json()
         orders = orders_data.get('orders')
 
-        logger.info(f"Retrieved {len(orders)} total orders from API")
+        logger.debug(f"Retrieved {len(orders)} total orders from API")
 
         # Filter for non-active orders and extract relevant info
         non_active_orders = {}
@@ -53,7 +53,7 @@ def check_limit_order(trader):
                 Trade.status.in_(["open"])  # Only check open trades
             ).all()
 
-            logger.info(f"Found {len(trades_to_check)} open trades to check")
+            logger.debug(f"Found {len(trades_to_check)} open trades to check")
 
             updates_made = 0
             for trade in trades_to_check:
@@ -74,7 +74,7 @@ def check_limit_order(trader):
                                 f"TX: https://solscan.io/tx/{trade.sell_transaction_sig}"
                             )
 
-                        logger.info(f"Trade {trade.id} completed successfully")
+                        logger.info(f"Limit order {trade.id} completed successfully")
                     else:
                         # Handle any other non-active statuses (cancelled, expired, etc.)
                         trade.status = order_status
@@ -84,7 +84,7 @@ def check_limit_order(trader):
                             f"⚠️ TAKE PROFIT {order_status.upper()}: {trade.token_address}"
                         )
 
-                        logger.info(f"Trade {trade.id} closed with status: {order_status}")
+                        logger.info(f"Limit order {trade.id} closed with status: {order_status}")
 
                     # Parse updatedAt timestamp if available
                     if order_info['updatedAt']:
@@ -105,9 +105,9 @@ def check_limit_order(trader):
                     updates_made += 1
 
             if updates_made > 0:
-                logger.info(f"Successfully updated {updates_made} trades")
+                logger.debug(f"Successfully updated {updates_made} trades")
             else:
-                logger.info("No trades needed updates")
+                logger.debug("No trades needed updates")
 
     except Exception as e:
         logger.error(f"Error checking orders: {e}")
