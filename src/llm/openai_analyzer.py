@@ -25,7 +25,7 @@ def analyze_with_openai(message_list: list[dict]) -> dict | None:
         You are a financial analyst specializing in identifying trading signals for memecoins on the Solana blockchain from Telegram messages.
         Your task is to analyze the conversation history provided and determine if the LAST message in the list contains a trading signal.
 
-        CORE RULE: If a Solana token address is provided in the last message, default to "buy" UNLESS there are explicit warning signals.
+        CORE RULE: If a Solana token address is provided in the current message, default to "buy" UNLESS there are explicit warning signals.
 
         Warning signals that indicate "hold":
         - Words like "scam", "rug", "avoid", "don't buy", "stay away"
@@ -41,11 +41,12 @@ def analyze_with_openai(message_list: list[dict]) -> dict | None:
 
         You must return your analysis in a strict JSON format. The JSON object must contain the following keys:
         - "decision": Your decision, which must be one of two strings: "buy" or "hold".
-        - "confidence_score": A float between 0.0 and 1.0 representing your confidence in the decision.
+        - "confidence_score": A float between 0.0 and 1.0 representing your confidence in the buy. If hold, set this to 0.0.
         - "rationale": A brief, one-sentence explanation for your decision, focusing on the last message.
         - "token_address": The Solana contract address of the token mentioned. If no address is found, this must be null.
 
-        When in doubt with a token address present, choose "buy" over "hold". "buy" is the default unless it clearly says to "DO NOT BUY" or similar.
+        When in doubt with a token address present in the last message, choose "buy" over "hold". "buy" is the default unless it clearly says to "DO NOT BUY" or similar.
+        Only look into the last message in the list for the token and decision-making. Previous messages are for context only.
         """
 
         messages_to_send = [

@@ -35,7 +35,7 @@ class JupiterTrader:
         self.headers = {"x-api-key": self.api_key} if self.api_key else {}
 
         # Trade configuration
-        self.slippage = int(os.getenv("SLIPPAGE", 300))
+        self.slippage = int(os.getenv("SLIPPAGE", 500))
 
         # Setup wallet
         try:
