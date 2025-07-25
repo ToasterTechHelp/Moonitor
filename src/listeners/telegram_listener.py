@@ -112,6 +112,7 @@ class TelegramListener:
 
                 # Send Discord notification for LLM analysis
                 self.discord.send_message(
+                    f"Message: {message_text}\n\n"
                     f"LLM Decision: {analysis['decision'].upper()}\n"
                     f"Token: {analysis.get('token_address', 'N/A')}\n"
                     f"Confidence: {analysis.get('confidence_score', 0):.2%}\n"
