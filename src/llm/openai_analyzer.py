@@ -55,7 +55,7 @@ def analyze_with_openai(message_list: list[dict]) -> dict | None:
         ]
 
         response = client.chat.completions.create(
-            model="gpt-4.1-mini",  # Changed back to gpt-4o-mini as it's generally more available and cost-effective
+            model="gpt-4.1-mini",
             response_format={"type": "json_object"},
             messages=messages_to_send
         )

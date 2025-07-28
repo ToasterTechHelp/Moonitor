@@ -5,6 +5,7 @@ import asyncio
 from dotenv import load_dotenv
 
 from src.database.database import create_db_and_tables
+from src.listeners.message_processor import MessageProcessor
 from src.listeners.telegram_listener import TelegramListener
 from src.monitor.limit_monitor import check_limit_order
 
@@ -41,12 +42,12 @@ def validate_env_variables():
     logger.info("All required environment variables are present.")
     return True
 
-async def limit_order_monitor(telegram_listener):
+async def limit_order_monitor(message_processor):
     """Simple background task to check orders every minute."""
     while True:
         try:
             await asyncio.sleep(60)  # Wait 1 minute
-            check_limit_order(telegram_listener.trader)
+            check_limit_order(message_processor.trader)
         except Exception as e:
             logger.error(f"Error in order monitoring: {e}")
 
@@ -73,18 +74,22 @@ async def main():
     if not TARGET_CHAT_IDS:
         raise ValueError("No TARGET_CHAT_IDS found in .env file.")
 
+    #Create an instance of Message Processor
+    message_processor = MessageProcessor()
+
     # Create an instance of our Telegram listener
     telegram_listener = TelegramListener(
         session_name=SESSION_NAME,
         api_id=API_ID,
         api_hash=API_HASH,
         target_chat_ids=TARGET_CHAT_IDS,
-        history_limit=TELEGRAM_HISTORY_LIMIT
+        history_limit=TELEGRAM_HISTORY_LIMIT,
+        message_processor=message_processor
     )
 
     await asyncio.gather(
         telegram_listener.start(),
-        limit_order_monitor(telegram_listener)
+        limit_order_monitor(message_processor)
     )
 
 

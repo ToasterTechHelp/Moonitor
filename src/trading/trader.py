@@ -72,6 +72,7 @@ class JupiterTrader:
                     logger.warning(f"Request failed, retrying: {e}")
                     continue
                 raise
+        return None
 
     def get_quote(self, input_mint: str, output_mint: str, amount: int) -> Optional[Dict[str, Any]]:
         """Get a swap quote from Jupiter.
@@ -357,3 +358,90 @@ class JupiterTrader:
         except Exception as e:
             logger.error(f"Error executing limit order: {e}")
             return None
+
+    def get_open_orders(self) -> Optional[Dict[str, Any]]:
+        """Get all active (open) limit orders for this wallet.
+
+        Returns:
+            Dictionary containing open orders or None if failed
+        """
+        logger.info("Fetching open limit orders...")
+
+        endpoint = f"{self.base_url}/trigger/v1/getTriggerOrders"
+        params = {
+            "user": str(self.wallet.pubkey()),
+            "orderStatus": "active"
+        }
+
+        try:
+            response = self._make_request("GET", endpoint, params=params, headers=self.headers)
+            
+            if not response.ok:
+                return self._handle_response_error(response, "Get open orders")
+
+            result = response.json()
+            orders = result.get("orders", [])
+            
+            logger.info(f"Found {len(orders)} open orders")
+            return result
+
+        except Exception as e:
+            logger.error(f"Error fetching open orders: {e}")
+            return None
+
+    def cancel_order(self, order_key: str) -> Tuple[bool, Optional[str], Optional[Dict[str, Any]]]:
+        """Cancel a specific limit order.
+
+        Args:
+            order_key: The order account address to cancel
+
+        Returns:
+            (success, signature, result)
+        """
+        logger.info(f"Canceling order: {order_key}")
+
+        endpoint = f"{self.base_url}/trigger/v1/cancelOrder"
+        cancel_request = {
+            "maker": str(self.wallet.pubkey()),
+            "order": order_key
+        }
+
+        try:
+            # Step 1: Get cancellation transaction
+            response = self._make_request("POST", endpoint, json=cancel_request, headers=self.headers)
+            
+            if not response.ok:
+                return False, None, self._handle_response_error(response, "Cancel order")
+
+            order_data = response.json()
+            
+            # Step 2: Sign transaction
+            signed_tx = self.sign_transaction(order_data)
+            if not signed_tx:
+                logger.error("Failed to sign limit order transaction")
+                return False, None, {"error": "Failed to sign transaction"}
+
+            request_id = order_data.get("requestId")
+            if not request_id:
+                logger.error("Missing requestId in order response")
+                return False, None, {"error": "Missing requestId"}
+
+            result = self.execute_limit_order(signed_tx, request_id)
+            if not result:
+                logger.error("Failed to execute limit order transaction")
+                return False, None, {"error": "Execution failed"}
+
+            # Process result
+            signature = result.get("signature")
+            success = result.get("status") == "Success"
+
+            if success:
+                logger.info(f"Order canceled successfully! Signature: {signature}")
+            else:
+                logger.error(f"Order cancellation failed: {result}")
+
+            return success, signature, result
+
+        except Exception as e:
+            logger.error(f"Error canceling order: {e}")
+            return False, None, {"error": str(e)}
